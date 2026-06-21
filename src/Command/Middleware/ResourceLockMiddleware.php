@@ -1,0 +1,159 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Componenta\CQRS\Command\Middleware;
+
+use Componenta\CQRS\Command\Attribute\Lock;
+use Componenta\CQRS\Command\Exception\LockAcquisitionException;
+use Componenta\CQRS\Command\Exception\LockKeyResolutionException;
+use Componenta\CQRS\Command\Metadata\CommandAttributeProviderInterface;
+use Componenta\CQRS\Command\Metadata\ReflectionCommandAttributeProvider;
+use Componenta\CQRS\Command\OperationInterface;
+use ReflectionObject;
+use Stringable;
+use Symfony\Component\Lock\LockFactory;
+use Throwable;
+
+/**
+ * Prevents concurrent execution of commands over the same resource.
+ *
+ * Uses distributed locking (Redis, database, etc.) to ensure only one
+ * process can execute a command for a given resource at a time.
+ *
+ * Problem without locking:
+ * ```
+ * Request A: WithdrawCommand(account: 1, amount: 100) -> reads balance 150
+ * Request B: WithdrawCommand(account: 1, amount: 100) -> reads balance 150
+ * Request A: writes balance 50
+ * Request B: writes balance 50 (should be -50 or rejected)
+ * ```
+ *
+ * With locking:
+ * ```
+ * Request A: acquires lock "account:1" -> reads 150 -> writes 50 -> releases
+ * Request B: waits for lock -> reads 50 -> rejected (insufficient funds)
+ * ```
+ *
+ * @example
+ * ```php
+ * #[Lock('account:{accountId}')]
+ * final readonly class WithdrawMoneyCommand
+ * {
+ *     public function __construct(
+ *         public int $accountId,
+ *         public int $amount,
+ *     ) {}
+ * }
+ * ```
+ */
+final readonly class ResourceLockMiddleware implements MiddlewareInterface
+{
+    private CommandAttributeProviderInterface $attributes;
+
+    public function __construct(
+        private LockFactory $lockFactory,
+        ?CommandAttributeProviderInterface $attributes = null,
+    ) {
+        $this->attributes = $attributes ?? new ReflectionCommandAttributeProvider();
+    }
+
+    public function execute(OperationInterface $operation, OperationHandlerInterface $handler): OperationInterface
+    {
+        $command = $operation->command;
+        $lockAttr = $this->attributes->lock($command);
+
+        if ($lockAttr === null) {
+            return $handler->handle($operation);
+        }
+
+        $reflection = new ReflectionObject($command);
+        $key = $this->resolveKey($lockAttr->key, $command, $reflection);
+        $lock = $this->lockFactory->createLock($key, $lockAttr->ttl);
+
+        if (!$lock->acquire($lockAttr->blocking)) {
+            throw new LockAcquisitionException($key);
+        }
+
+        $exception = null;
+
+        try {
+            return $handler->handle($operation);
+        } catch (Throwable $e) {
+            $exception = $e;
+            throw $e;
+        } finally {
+            try {
+                $lock->release();
+            } catch (Throwable $releaseException) {
+                if ($exception === null) {
+                    throw $releaseException;
+                }
+            }
+        }
+    }
+
+    private function resolveKey(string $template, object $command, ReflectionObject $reflection): string
+    {
+        $result = preg_replace_callback(
+            '/\{(\w+)}/',
+            fn(array $m): string => $this->resolveProperty($m, $command, $reflection),
+            $template,
+        );
+
+        if ($result === null || $result === '') {
+            throw new LockKeyResolutionException(
+                'Lock key resolved to empty string for ' . $command::class
+            );
+        }
+
+        return $result;
+    }
+
+    /**
+     * @param array<int, string> $match
+     */
+    private function resolveProperty(array $match, object $command, ReflectionObject $reflection): string
+    {
+        $name = $match[1];
+
+        if (!$reflection->hasProperty($name)) {
+            throw new LockKeyResolutionException(
+                "Property '$name' does not exist on " . $command::class
+            );
+        }
+
+        $property = $reflection->getProperty($name);
+
+        if (!$property->isInitialized($command)) {
+            throw new LockKeyResolutionException(
+                "Property '$name' is not initialized on " . $command::class
+            );
+        }
+
+        $value = $property->getValue($command);
+
+        return match (true) {
+            $value === null => 'null',
+            is_bool($value) => $value ? 'true' : 'false',
+            is_scalar($value) => (string) $value,
+            $value instanceof Stringable => $this->stringableToString($value, $name, $command::class),
+            default => throw new LockKeyResolutionException(
+                "Property '{$name}' on " . $command::class . ' is not convertible to string'
+            ),
+        };
+    }
+
+    private function stringableToString(Stringable $value, string $property, string $class): string
+    {
+        try {
+            return $value->__toString();
+        } catch (Throwable $e) {
+            throw new LockKeyResolutionException(
+                "Property '$property' on $class threw exception during string conversion: {$e->getMessage()}",
+                previous: $e,
+            );
+        }
+    }
+}
+
