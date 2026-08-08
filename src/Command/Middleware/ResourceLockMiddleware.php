@@ -4,12 +4,12 @@ declare(strict_types=1);
 
 namespace Componenta\CQRS\Command\Middleware;
 
-use Componenta\CQRS\Command\Attribute\Lock;
 use Componenta\CQRS\Command\Exception\LockAcquisitionException;
 use Componenta\CQRS\Command\Exception\LockKeyResolutionException;
-use Componenta\CQRS\Command\Metadata\CommandAttributeProviderInterface;
-use Componenta\CQRS\Command\Metadata\ReflectionCommandAttributeProvider;
+use Componenta\CQRS\Command\Metadata\CommandMetadataProviderInterface;
+use Componenta\CQRS\Command\Metadata\ReflectionCommandMetadataProvider;
 use Componenta\CQRS\Command\OperationInterface;
+use Componenta\CQRS\Lock\Attribute\Lock;
 use ReflectionObject;
 use Stringable;
 use Symfony\Component\Lock\LockFactory;
@@ -49,19 +49,19 @@ use Throwable;
  */
 final readonly class ResourceLockMiddleware implements MiddlewareInterface
 {
-    private CommandAttributeProviderInterface $attributes;
+    private CommandMetadataProviderInterface $metadata;
 
     public function __construct(
         private LockFactory $lockFactory,
-        ?CommandAttributeProviderInterface $attributes = null,
+        ?CommandMetadataProviderInterface $metadata = null,
     ) {
-        $this->attributes = $attributes ?? new ReflectionCommandAttributeProvider();
+        $this->metadata = $metadata ?? new ReflectionCommandMetadataProvider();
     }
 
     public function execute(OperationInterface $operation, OperationHandlerInterface $handler): OperationInterface
     {
         $command = $operation->command;
-        $lockAttr = $this->attributes->lock($command);
+        $lockAttr = $this->metadata->get($command, Lock::class);
 
         if ($lockAttr === null) {
             return $handler->handle($operation);
