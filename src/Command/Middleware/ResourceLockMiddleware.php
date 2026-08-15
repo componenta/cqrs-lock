@@ -6,6 +6,7 @@ namespace Componenta\CQRS\Command\Middleware;
 
 use Componenta\CQRS\Command\Exception\LockAcquisitionException;
 use Componenta\CQRS\Command\Exception\LockKeyResolutionException;
+use Componenta\CQRS\Command\Exception\LockReleaseException;
 use Componenta\CQRS\Command\Metadata\CommandMetadataProviderInterface;
 use Componenta\CQRS\Command\Metadata\ReflectionCommandMetadataProvider;
 use Componenta\CQRS\Command\OperationInterface;
@@ -69,7 +70,7 @@ final readonly class ResourceLockMiddleware implements MiddlewareInterface
 
         $reflection = new ReflectionObject($command);
         $key = $this->resolveKey($lockAttr->key, $command, $reflection);
-        $lock = $this->lockFactory->createLock($key, $lockAttr->ttl);
+        $lock = $this->lockFactory->createLock($key, $lockAttr->ttl, autoRelease: false);
 
         if (!$lock->acquire($lockAttr->blocking)) {
             throw new LockAcquisitionException($key);
@@ -89,6 +90,8 @@ final readonly class ResourceLockMiddleware implements MiddlewareInterface
                 if ($exception === null) {
                     throw $releaseException;
                 }
+
+                throw new LockReleaseException($exception, $releaseException);
             }
         }
     }
@@ -125,13 +128,32 @@ final readonly class ResourceLockMiddleware implements MiddlewareInterface
 
         $property = $reflection->getProperty($name);
 
+        if ($property->isStatic()) {
+            throw new LockKeyResolutionException(
+                "Property '$name' on " . $command::class . ' must not be static'
+            );
+        }
+
+        if ($property->isVirtual() || $property->getHooks() !== []) {
+            throw new LockKeyResolutionException(
+                "Property '$name' on " . $command::class . ' must be a stored property without hooks'
+            );
+        }
+
         if (!$property->isInitialized($command)) {
             throw new LockKeyResolutionException(
                 "Property '$name' is not initialized on " . $command::class
             );
         }
 
-        $value = $property->getValue($command);
+        try {
+            $value = $property->getValue($command);
+        } catch (Throwable $exception) {
+            throw new LockKeyResolutionException(
+                "Cannot read property '$name' on " . $command::class . ": {$exception->getMessage()}",
+                previous: $exception,
+            );
+        }
 
         return match (true) {
             $value === null => 'null',
