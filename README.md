@@ -21,9 +21,11 @@ The lock provider registers `Componenta\CQRS\Lock\Attribute\Lock` in `ConfigKey:
 
 CQRS v4's standard `CommandMetadataProviderInterface` is strictly map-backed. There is no implicit reflection fallback for metadata absent from the active map. Applications that deliberately want reflection metadata must bind `ReflectionCommandMetadataProvider` explicitly.
 
-Add `ResourceLockMiddleware` to `ConfigKey::COMMAND_MIDDLEWARES` where locking is required. The middleware declares a hard CQRS v4 ordering constraint requiring command policy, when present, to execute before a lock is acquired.
+Add `ResourceLockMiddleware` to `ConfigKey::COMMAND_MIDDLEWARES` where locking is required. Middleware ordering is application configuration. Placing policy before the lock avoids acquiring a distributed lock for a command that authorization later rejects; placing the lock outside policy deliberately makes authorization part of the locked section.
 
-The `ttl` value is the maximum expected uninterrupted command duration. The middleware acquires and releases the lock, but does not refresh it while the handler runs; choose a TTL longer than the worst-case execution time including any retry strategy placed inside the lock. `blocking: true` waits according to the configured Symfony lock store and does not add a middleware-level deadline.
+Lock/retry ordering is also application-defined. `ResourceLockMiddleware -> RetryMiddleware` holds one lock across all retry attempts. `RetryMiddleware -> ResourceLockMiddleware` acquires and releases the lock for each attempt. Choose the topology that matches the resource and retry semantics.
+
+The `ttl` value is the maximum expected uninterrupted command duration while the lock is held. The middleware acquires and releases the lock, but does not refresh it while downstream execution runs; choose a TTL long enough for everything placed inside the lock. `blocking: true` waits according to the configured Symfony lock store and does not add a middleware-level deadline.
 
 Placeholders such as `{accountId}` must refer to initialized, non-static stored properties without PHP property hooks. Hooked or virtual properties are rejected without invoking their accessors.
 
