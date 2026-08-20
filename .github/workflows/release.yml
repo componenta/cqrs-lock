@@ -1,16 +1,16 @@
-name: Release
+name: Verify and release
 
 on:
   push:
     branches:
       - main
+  pull_request:
 
 permissions:
   contents: read
 
 jobs:
   verify:
-    if: startsWith(github.event.head_commit.message, 'Release v')
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -25,22 +25,11 @@ jobs:
           tools: composer:v2
       - run: composer validate --strict
       - run: composer install --no-interaction --prefer-dist
-      - name: Run package checks
-        shell: bash
-        run: |
-          set -euo pipefail
-          if php -r '$c=json_decode(file_get_contents("composer.json"), true, 512, JSON_THROW_ON_ERROR); exit(isset($c["scripts"]["test"]) ? 0 : 1);'; then
-            composer test
-          elif [ -d tests ] && [ -x vendor/bin/pest ]; then
-            vendor/bin/pest
-          elif [ -d tests ] && [ -x vendor/bin/phpunit ]; then
-            vendor/bin/phpunit tests
-          else
-            find src -type f -name '*.php' -print0 | xargs -0 -n1 php -l
-          fi
+      - run: composer test
+      - run: composer analyse
 
   publish:
-    if: startsWith(github.event.head_commit.message, 'Release v')
+    if: github.event_name == 'push' && startsWith(github.event.head_commit.message, 'Release v')
     needs: verify
     runs-on: ubuntu-latest
     permissions:
