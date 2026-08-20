@@ -8,7 +8,6 @@ use Componenta\CQRS\Command\Exception\LockAcquisitionException;
 use Componenta\CQRS\Command\Exception\LockKeyResolutionException;
 use Componenta\CQRS\Command\Exception\LockReleaseException;
 use Componenta\CQRS\Command\Metadata\CommandMetadataProviderInterface;
-use Componenta\CQRS\Command\Metadata\ReflectionCommandMetadataProvider;
 use Componenta\CQRS\Command\OperationInterface;
 use Componenta\CQRS\Lock\Attribute\Lock;
 use ReflectionObject;
@@ -21,20 +20,6 @@ use Throwable;
  *
  * Uses distributed locking (Redis, database, etc.) to ensure only one
  * process can execute a command for a given resource at a time.
- *
- * Problem without locking:
- * ```
- * Request A: WithdrawCommand(account: 1, amount: 100) -> reads balance 150
- * Request B: WithdrawCommand(account: 1, amount: 100) -> reads balance 150
- * Request A: writes balance 50
- * Request B: writes balance 50 (should be -50 or rejected)
- * ```
- *
- * With locking:
- * ```
- * Request A: acquires lock "account:1" -> reads 150 -> writes 50 -> releases
- * Request B: waits for lock -> reads 50 -> rejected (insufficient funds)
- * ```
  *
  * @example
  * ```php
@@ -50,13 +35,10 @@ use Throwable;
  */
 final readonly class ResourceLockMiddleware implements MiddlewareInterface
 {
-    private CommandMetadataProviderInterface $metadata;
-
     public function __construct(
         private LockFactory $lockFactory,
-        ?CommandMetadataProviderInterface $metadata = null,
+        private CommandMetadataProviderInterface $metadata,
     ) {
-        $this->metadata = $metadata ?? new ReflectionCommandMetadataProvider();
     }
 
     public function execute(OperationInterface $operation, OperationHandlerInterface $handler): OperationInterface
@@ -87,10 +69,6 @@ final readonly class ResourceLockMiddleware implements MiddlewareInterface
             try {
                 $lock->release();
             } catch (Throwable $releaseException) {
-                if ($exception === null) {
-                    throw $releaseException;
-                }
-
                 throw new LockReleaseException($exception, $releaseException);
             }
         }
@@ -106,23 +84,21 @@ final readonly class ResourceLockMiddleware implements MiddlewareInterface
 
         if ($result === null || $result === '') {
             throw new LockKeyResolutionException(
-                'Lock key resolved to empty string for ' . $command::class
+                'Lock key resolved to empty string for ' . $command::class,
             );
         }
 
         return $result;
     }
 
-    /**
-     * @param array<int, string> $match
-     */
+    /** @param array<int, string> $match */
     private function resolveProperty(array $match, object $command, ReflectionObject $reflection): string
     {
         $name = $match[1];
 
         if (!$reflection->hasProperty($name)) {
             throw new LockKeyResolutionException(
-                "Property '$name' does not exist on " . $command::class
+                "Property '$name' does not exist on " . $command::class,
             );
         }
 
@@ -130,19 +106,19 @@ final readonly class ResourceLockMiddleware implements MiddlewareInterface
 
         if ($property->isStatic()) {
             throw new LockKeyResolutionException(
-                "Property '$name' on " . $command::class . ' must not be static'
+                "Property '$name' on " . $command::class . ' must not be static',
             );
         }
 
         if ($property->isVirtual() || $property->getHooks() !== []) {
             throw new LockKeyResolutionException(
-                "Property '$name' on " . $command::class . ' must be a stored property without hooks'
+                "Property '$name' on " . $command::class . ' must be a stored property without hooks',
             );
         }
 
         if (!$property->isInitialized($command)) {
             throw new LockKeyResolutionException(
-                "Property '$name' is not initialized on " . $command::class
+                "Property '$name' is not initialized on " . $command::class,
             );
         }
 
@@ -161,7 +137,7 @@ final readonly class ResourceLockMiddleware implements MiddlewareInterface
             is_scalar($value) => (string) $value,
             $value instanceof Stringable => $this->stringableToString($value, $name, $command::class),
             default => throw new LockKeyResolutionException(
-                "Property '{$name}' on " . $command::class . ' is not convertible to string'
+                "Property '{$name}' on " . $command::class . ' is not convertible to string',
             ),
         };
     }
@@ -178,4 +154,3 @@ final readonly class ResourceLockMiddleware implements MiddlewareInterface
         }
     }
 }
-
