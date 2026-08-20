@@ -16,7 +16,6 @@ use Symfony\Component\Lock\LockFactory;
 use Throwable;
 
 /** Prevents concurrent execution of commands over the same resource. */
-#[MiddlewareOrder(after: ['Componenta\\CQRS\\Command\\Middleware\\PolicyMiddleware'])]
 final readonly class ResourceLockMiddleware implements MiddlewareInterface
 {
     public function __construct(
