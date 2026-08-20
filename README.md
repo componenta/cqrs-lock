@@ -1,12 +1,14 @@
 # Componenta CQRS Lock
 
-Resource lock middleware package for `componenta/cqrs` commands marked with `#[Componenta\CQRS\Lock\Attribute\Lock]`.
+Resource lock middleware for CQRS v4 commands marked with `#[Componenta\CQRS\Lock\Attribute\Lock]`.
 
 ```bash
 composer require componenta/cqrs-lock
 ```
 
-Register the provider and configure `Symfony\Component\Lock\LockFactory` in the container.
+`main` is the lock v3 line and requires `componenta/cqrs` v4.
+
+Register the providers and configure `Symfony\Component\Lock\LockFactory` in the container:
 
 ```php
 return [
@@ -15,11 +17,13 @@ return [
 ];
 ```
 
-The provider registers `Componenta\CQRS\Lock\Attribute\Lock` as a generic CQRS metadata attribute and provides `Componenta\CQRS\Command\Middleware\ResourceLockMiddleware` plus lock-related exceptions. With `componenta/cqrs-app`, the attribute is included in the versioned CQRS map automatically. The standard CQRS metadata provider is map-backed and does not reflect missing metadata implicitly; applications that deliberately want reflection must bind `ReflectionCommandMetadataProvider` explicitly.
+The lock provider registers `Componenta\CQRS\Lock\Attribute\Lock` in `ConfigKey::COMMAND_METADATA_ATTRIBUTES` and provides `ResourceLockMiddleware`. With `componenta/cqrs-app`, lock metadata is discovered in development and compiled into the same versioned CQRS map used in production.
 
-Add `ResourceLockMiddleware` to `ConfigKey::COMMAND_MIDDLEWARES` where locking is required. The application must provide `Symfony\Component\Lock\LockFactory`.
+CQRS v4's standard `CommandMetadataProviderInterface` is strictly map-backed. There is no implicit reflection fallback for metadata absent from the active map. Applications that deliberately want reflection metadata must bind `ReflectionCommandMetadataProvider` explicitly.
 
-The `ttl` value is the maximum expected command duration. The middleware acquires and releases the lock, but does not refresh it while the handler runs; choose a TTL longer than the worst-case execution time. `blocking: true` waits according to the configured Symfony lock store and does not add a middleware-level deadline.
+Add `ResourceLockMiddleware` to `ConfigKey::COMMAND_MIDDLEWARES` where locking is required. The middleware declares a hard CQRS v4 ordering constraint requiring command policy, when present, to execute before a lock is acquired.
+
+The `ttl` value is the maximum expected uninterrupted command duration. The middleware acquires and releases the lock, but does not refresh it while the handler runs; choose a TTL longer than the worst-case execution time including any retry strategy placed inside the lock. `blocking: true` waits according to the configured Symfony lock store and does not add a middleware-level deadline.
 
 Placeholders such as `{accountId}` must refer to initialized, non-static stored properties without PHP property hooks. Hooked or virtual properties are rejected without invoking their accessors.
 
