@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace Componenta\CQRS\Command\Factory;
 
 use Componenta\CQRS\Command\Metadata\CommandMetadataProviderInterface;
-use LogicException;
 use Componenta\CQRS\Command\Middleware\ResourceLockMiddleware;
+use LogicException;
 use Psr\Container\ContainerInterface;
 use Symfony\Component\Lock\LockFactory;
 
@@ -24,18 +24,14 @@ final class ResourceLockMiddlewareFactory
             ));
         }
 
-        $metadata = null;
+        $metadata = $container->get(CommandMetadataProviderInterface::class);
 
-        if ($container->has(CommandMetadataProviderInterface::class)) {
-            $metadata = $container->get(CommandMetadataProviderInterface::class);
-
-            if (!$metadata instanceof CommandMetadataProviderInterface) {
-                throw new LogicException(sprintf(
-                    'Container entry "%s" must implement %s.',
-                    CommandMetadataProviderInterface::class,
-                    CommandMetadataProviderInterface::class,
-                ));
-            }
+        if (!$metadata instanceof CommandMetadataProviderInterface) {
+            throw new LogicException(sprintf(
+                'Container entry "%s" must implement %s.',
+                CommandMetadataProviderInterface::class,
+                CommandMetadataProviderInterface::class,
+            ));
         }
 
         return new ResourceLockMiddleware(
