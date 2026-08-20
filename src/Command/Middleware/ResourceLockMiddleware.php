@@ -15,24 +15,8 @@ use Stringable;
 use Symfony\Component\Lock\LockFactory;
 use Throwable;
 
-/**
- * Prevents concurrent execution of commands over the same resource.
- *
- * Uses distributed locking (Redis, database, etc.) to ensure only one
- * process can execute a command for a given resource at a time.
- *
- * @example
- * ```php
- * #[Lock('account:{accountId}')]
- * final readonly class WithdrawMoneyCommand
- * {
- *     public function __construct(
- *         public int $accountId,
- *         public int $amount,
- *     ) {}
- * }
- * ```
- */
+/** Prevents concurrent execution of commands over the same resource. */
+#[MiddlewareOrder(after: [PolicyMiddleware::class])]
 final readonly class ResourceLockMiddleware implements MiddlewareInterface
 {
     public function __construct(
