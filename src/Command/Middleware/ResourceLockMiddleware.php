@@ -8,6 +8,7 @@ use Componenta\CQRS\Command\Exception\LockAcquisitionException;
 use Componenta\CQRS\Command\Exception\LockKeyResolutionException;
 use Componenta\CQRS\Command\Exception\LockReleaseException;
 use Componenta\CQRS\Command\Metadata\CommandMetadataProviderInterface;
+use Componenta\CQRS\Command\Middleware\Internal\LockExecutionState;
 use Componenta\CQRS\Command\OperationInterface;
 use Componenta\CQRS\Lock\Attribute\Lock;
 use ReflectionObject;
@@ -18,10 +19,13 @@ use Throwable;
 /** Prevents concurrent execution of commands over the same resource. */
 final readonly class ResourceLockMiddleware implements MiddlewareInterface
 {
+    private LockExecutionState $executionState;
+
     public function __construct(
         private LockFactory $lockFactory,
         private CommandMetadataProviderInterface $metadata,
     ) {
+        $this->executionState = new LockExecutionState();
     }
 
     public function execute(OperationInterface $operation, OperationHandlerInterface $handler): OperationInterface
@@ -35,12 +39,24 @@ final readonly class ResourceLockMiddleware implements MiddlewareInterface
 
         $reflection = new ReflectionObject($command);
         $key = $this->resolveKey($lockAttr->key, $command, $reflection);
+
+        if ($this->executionState->contains($key)) {
+            $this->executionState->enter($key);
+
+            try {
+                return $handler->handle($operation);
+            } finally {
+                $this->executionState->leave($key);
+            }
+        }
+
         $lock = $this->lockFactory->createLock($key, $lockAttr->ttl, autoRelease: false);
 
         if (!$lock->acquire($lockAttr->blocking)) {
             throw new LockAcquisitionException($key);
         }
 
+        $this->executionState->enter($key);
         $exception = null;
 
         try {
@@ -49,6 +65,8 @@ final readonly class ResourceLockMiddleware implements MiddlewareInterface
             $exception = $e;
             throw $e;
         } finally {
+            $this->executionState->leave($key);
+
             try {
                 $lock->release();
             } catch (Throwable $releaseException) {
