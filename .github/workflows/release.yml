@@ -41,9 +41,36 @@ jobs:
       - run: composer test
       - run: composer analyse
 
+  verify-minimum-lock:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Checkout current CQRS v4 source
+        uses: actions/checkout@v7
+        with:
+          repository: componenta/cqrs
+          ref: main
+          path: .ci/cqrs
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          coverage: none
+          tools: composer:v2
+      - name: Configure Composer authentication
+        run: composer config --global github-oauth.github.com "${{ github.token }}"
+      - run: composer validate --strict
+      - name: Select current CQRS and minimum lock version
+        shell: bash
+        run: |
+          composer config --json repositories.componenta-cqrs '{"type":"path","url":".ci/cqrs","options":{"versions":{"componenta/cqrs":"4.0.0"}}}'
+          composer require --no-update symfony/lock:7.4.0
+      - run: composer update --with-all-dependencies --no-interaction --prefer-dist --no-progress
+      - run: composer test
+      - run: composer analyse
+
   publish:
     if: github.event_name == 'push' && startsWith(github.event.head_commit.message, 'Release v')
-    needs: verify
+    needs: [verify, verify-minimum-lock]
     runs-on: ubuntu-latest
     permissions:
       contents: write
