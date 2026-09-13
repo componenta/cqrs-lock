@@ -15,16 +15,13 @@ use Symfony\Component\Lock\Store\InMemoryStore;
 function reentrantLockTestMetadata(Lock $lock): CommandMetadataProviderInterface
 {
     return new class ($lock) implements CommandMetadataProviderInterface {
-        public function __construct(private readonly Lock $lock) {}
+        public function __construct(private readonly Lock $lock)
+        {
+        }
 
         public function get(object|string $command, string $attribute): ?object
         {
             return $attribute === Lock::class ? $this->lock : null;
-        }
-
-        public function isKnown(object|string $command): bool
-        {
-            return true;
         }
     };
 }
@@ -34,7 +31,7 @@ it('treats nested dispatch of the same resource as reentrant', function (): void
         new LockFactory(new InMemoryStore()),
         reentrantLockTestMetadata(new Lock('resource', blocking: false)),
     );
-    $inner = new class implements OperationHandlerInterface {
+    $inner = new class () implements OperationHandlerInterface {
         public int $calls = 0;
 
         public function handle(OperationInterface $operation): OperationInterface
@@ -50,7 +47,8 @@ it('treats nested dispatch of the same resource as reentrant', function (): void
         public function __construct(
             private readonly ResourceLockMiddleware $middleware,
             private readonly OperationHandlerInterface $inner,
-        ) {}
+        ) {
+        }
 
         public function handle(OperationInterface $operation): OperationInterface
         {
@@ -73,7 +71,7 @@ it('keeps lock ownership isolated between fibers', function (): void {
         new LockFactory(new InMemoryStore()),
         reentrantLockTestMetadata(new Lock('resource', blocking: false)),
     );
-    $holdingHandler = new class implements OperationHandlerInterface {
+    $holdingHandler = new class () implements OperationHandlerInterface {
         public function handle(OperationInterface $operation): OperationInterface
         {
             Fiber::suspend('locked');
@@ -81,21 +79,21 @@ it('keeps lock ownership isolated between fibers', function (): void {
             return $operation;
         }
     };
-    $contender = new class implements OperationHandlerInterface {
+    $contender = new class () implements OperationHandlerInterface {
         public function handle(OperationInterface $operation): OperationInterface
         {
             return $operation;
         }
     };
     $fiber = new Fiber(
-        fn(): OperationInterface => $middleware->execute(
+        fn (): OperationInterface => $middleware->execute(
             Operation::create(new stdClass()),
             $holdingHandler,
         ),
     );
 
     expect($fiber->start())->toBe('locked')
-        ->and(fn() => $middleware->execute(Operation::create(new stdClass()), $contender))
+        ->and(fn () => $middleware->execute(Operation::create(new stdClass()), $contender))
         ->toThrow(LockAcquisitionException::class);
 
     $fiber->resume();

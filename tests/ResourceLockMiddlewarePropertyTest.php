@@ -30,16 +30,13 @@ final class LockHookedPropertyCommand
 function lockTestMetadata(Lock $lock): CommandMetadataProviderInterface
 {
     return new class ($lock) implements CommandMetadataProviderInterface {
-        public function __construct(private readonly Lock $lock) {}
+        public function __construct(private readonly Lock $lock)
+        {
+        }
 
         public function get(object|string $command, string $attribute): ?object
         {
             return $attribute === Lock::class ? $this->lock : null;
-        }
-
-        public function isKnown(object|string $command): bool
-        {
-            return true;
         }
     };
 }
@@ -50,7 +47,7 @@ it('rejects hooked lock-key properties without invoking their getters', function
         new LockFactory(new InMemoryStore()),
         lockTestMetadata(new Lock('hook:{value}')),
     );
-    $handler = new class implements OperationHandlerInterface {
+    $handler = new class () implements OperationHandlerInterface {
         public bool $called = false;
 
         public function handle(OperationInterface $operation): OperationInterface
@@ -80,18 +77,32 @@ it('preserves handler and lock release failures', function (): void {
     $primary = new RuntimeException('handler failed');
     $release = new RuntimeException('release failed');
     $store = new class ($release) implements Symfony\Component\Lock\PersistingStoreInterface {
-        public function __construct(private readonly Throwable $releaseFailure) {}
-        public function save(Symfony\Component\Lock\Key $key): void {}
-        public function delete(Symfony\Component\Lock\Key $key): void { throw $this->releaseFailure; }
-        public function exists(Symfony\Component\Lock\Key $key): bool { return true; }
-        public function putOffExpiration(Symfony\Component\Lock\Key $key, float $ttl): void {}
+        public function __construct(private readonly Throwable $releaseFailure)
+        {
+        }
+        public function save(Symfony\Component\Lock\Key $key): void
+        {
+        }
+        public function delete(Symfony\Component\Lock\Key $key): void
+        {
+            throw $this->releaseFailure;
+        }
+        public function exists(Symfony\Component\Lock\Key $key): bool
+        {
+            return true;
+        }
+        public function putOffExpiration(Symfony\Component\Lock\Key $key, float $ttl): void
+        {
+        }
     };
     $middleware = new ResourceLockMiddleware(
         new LockFactory($store),
         lockTestMetadata(new Lock('resource')),
     );
     $handler = new class ($primary) implements OperationHandlerInterface {
-        public function __construct(private readonly Throwable $failure) {}
+        public function __construct(private readonly Throwable $failure)
+        {
+        }
 
         public function handle(OperationInterface $operation): OperationInterface
         {
@@ -112,17 +123,29 @@ it('preserves handler and lock release failures', function (): void {
 it('wraps a lock release failure after successful command execution', function (): void {
     $release = new RuntimeException('release failed');
     $store = new class ($release) implements Symfony\Component\Lock\PersistingStoreInterface {
-        public function __construct(private readonly Throwable $releaseFailure) {}
-        public function save(Symfony\Component\Lock\Key $key): void {}
-        public function delete(Symfony\Component\Lock\Key $key): void { throw $this->releaseFailure; }
-        public function exists(Symfony\Component\Lock\Key $key): bool { return true; }
-        public function putOffExpiration(Symfony\Component\Lock\Key $key, float $ttl): void {}
+        public function __construct(private readonly Throwable $releaseFailure)
+        {
+        }
+        public function save(Symfony\Component\Lock\Key $key): void
+        {
+        }
+        public function delete(Symfony\Component\Lock\Key $key): void
+        {
+            throw $this->releaseFailure;
+        }
+        public function exists(Symfony\Component\Lock\Key $key): bool
+        {
+            return true;
+        }
+        public function putOffExpiration(Symfony\Component\Lock\Key $key, float $ttl): void
+        {
+        }
     };
     $middleware = new ResourceLockMiddleware(
         new LockFactory($store),
         lockTestMetadata(new Lock('resource')),
     );
-    $handler = new class implements OperationHandlerInterface {
+    $handler = new class () implements OperationHandlerInterface {
         public function handle(OperationInterface $operation): OperationInterface
         {
             return $operation;

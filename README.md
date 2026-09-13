@@ -17,9 +17,7 @@ return [
 ];
 ```
 
-The lock provider registers `Componenta\CQRS\Lock\Attribute\Lock` in `ConfigKey::COMMAND_METADATA_ATTRIBUTES` and provides `ResourceLockMiddleware`. With `componenta/cqrs-app`, lock metadata is discovered in development and compiled into the same versioned CQRS map used in production.
-
-CQRS v4's standard `CommandMetadataProviderInterface` is strictly map-backed. There is no implicit reflection fallback for metadata absent from the active map. Applications that deliberately want reflection metadata must bind `ReflectionCommandMetadataProvider` explicitly.
+The provider registers `ResourceLockMiddleware`. The middleware reads `Lock` through the core `CommandMetadataProviderInterface`. Its default Reflection implementation creates fresh metadata on each call, independently of handler maps and application environment.
 
 Add `ResourceLockMiddleware` to `ConfigKey::COMMAND_MIDDLEWARES` where locking is required. Middleware ordering is application configuration. Placing policy before the lock avoids acquiring a distributed lock for a command that authorization later rejects; placing the lock outside policy deliberately makes authorization part of the locked section.
 

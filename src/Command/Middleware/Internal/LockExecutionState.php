@@ -14,7 +14,7 @@ final class LockExecutionState
     /** @var array<string, positive-int> */
     private array $main = [];
 
-    /** @var WeakMap<Fiber, array<string, positive-int>> */
+    /** @var WeakMap<object, array<string, positive-int>> */
     private WeakMap $fibers;
 
     public function __construct()
