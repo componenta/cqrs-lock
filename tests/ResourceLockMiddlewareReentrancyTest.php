@@ -176,3 +176,68 @@ it('holds the real lock throughout nested execution and releases it on success o
         $contender->release();
     }
 })->with([false, true]);
+
+
+function reentrantLockHandler(Closure $callback): OperationHandlerInterface
+{
+    return new readonly class ($callback) implements OperationHandlerInterface {
+        public function __construct(private Closure $callback) {}
+        public function handle(OperationInterface $operation): OperationInterface
+        {
+            return ($this->callback)($operation);
+        }
+    };
+}
+
+it('retains independent resource ownership through three nested dispatches in the same execution context', function (bool $inFiber): void {
+    $factory = new LockFactory(new InMemoryStore());
+    $middleware = new ResourceLockMiddleware(
+        $factory,
+        reentrantLockTestMetadata(new Lock('resource:{id}', blocking: false)),
+    );
+    $first = Operation::create((object) ['id' => 1]);
+    $second = Operation::create((object) ['id' => 2]);
+    $terminal = reentrantLockHandler(static fn (OperationInterface $operation): OperationInterface => $operation);
+    $probe = static function (int $id) use ($factory): bool {
+        $lock = $factory->createLock("resource:$id");
+        $acquired = $lock->acquire(false);
+        if ($acquired) {
+            $lock->release();
+        }
+        return $acquired;
+    };
+    $failure = new DomainException('nested failure');
+    $run = static function () use ($middleware, $first, $second, $terminal, $probe, $failure): void {
+        $inner = reentrantLockHandler(static function (OperationInterface $operation) use ($middleware, $first, $second, $terminal, $probe, $failure): OperationInterface {
+            expect($probe(1))->toBeFalse()->and($probe(2))->toBeFalse();
+            try {
+                $middleware->execute($first, reentrantLockHandler(static fn (): never => throw $failure));
+                test()->fail('Expected nested failure.');
+            } catch (DomainException $caught) {
+                expect($caught)->toBe($failure);
+            }
+            expect($middleware->execute($first, $terminal))->toBe($first)
+                ->and($middleware->execute($second, $terminal))->toBe($second);
+            return $operation;
+        });
+        $outer = reentrantLockHandler(static function (OperationInterface $operation) use ($middleware, $first, $second, $inner, $terminal, $probe): OperationInterface {
+            expect($middleware->execute($second, $inner))->toBe($second)
+                ->and($probe(2))->toBeTrue()
+                ->and($probe(1))->toBeFalse()
+                ->and($middleware->execute($first, $terminal))->toBe($first);
+            return $operation;
+        });
+
+        expect($middleware->execute($first, $outer))->toBe($first)
+            ->and($probe(1))->toBeTrue()
+            ->and($probe(2))->toBeTrue();
+    };
+    if ($inFiber) {
+        $fiber = new Fiber($run);
+        $fiber->start();
+        expect($fiber->isTerminated())->toBeTrue();
+    } else {
+        $run();
+    }
+    expect($probe(1))->toBeTrue()->and($probe(2))->toBeTrue();
+})->with([false, true]);
