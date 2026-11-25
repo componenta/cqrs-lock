@@ -44,3 +44,22 @@ it('uses discovered metadata to hold and release the configured lock', function 
     expect($result->result?->value)->toBeFalse()->and($probe->acquire(false))->toBeTrue();
     $probe->release();
 });
+
+
+it('registers its factory and rejects invalid lock and metadata services', function (): void {
+    $factoryClass = \Componenta\CQRS\Command\Factory\ResourceLockMiddlewareFactory::class;
+    $config = (new ConfigProvider())();
+    expect($config[ConfigKey::DEPENDENCIES][ConfigKey::FACTORIES][ResourceLockMiddleware::class])->toBe($factoryClass);
+
+    $container = $this->createMock(\Psr\Container\ContainerInterface::class);
+    $container->expects($this->once())->method('get')->with(LockFactory::class)->willReturn(new stdClass());
+    expect(fn () => (new $factoryClass())($container))->toThrow(LogicException::class, LockFactory::class);
+
+    $container = $this->createStub(\Psr\Container\ContainerInterface::class);
+    $container->method('get')->willReturnMap([
+        [LockFactory::class, new LockFactory(new InMemoryStore())],
+        [\Componenta\CQRS\Command\Metadata\CommandMetadataProviderInterface::class, new stdClass()],
+    ]);
+    expect(fn () => (new $factoryClass())($container))
+        ->toThrow(LogicException::class, \Componenta\CQRS\Command\Metadata\CommandMetadataProviderInterface::class);
+});

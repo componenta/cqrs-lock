@@ -161,3 +161,29 @@ it('wraps a lock release failure after successful command execution', function (
             ->and($exception->getPrevious())->toBe($exception->releaseFailure);
     }
 });
+
+
+it('does not acquire a lock for commands without lock metadata', function (): void {
+    $factory = new LockFactory(new InMemoryStore());
+    $metadata = $this->createStub(CommandMetadataProviderInterface::class);
+    $metadata->method('get')->willReturn(null);
+    $operation = Operation::create(new stdClass());
+    $handler = $this->createMock(OperationHandlerInterface::class);
+    $handler->expects($this->once())->method('handle')->with($operation)->willReturn($operation);
+    expect((new ResourceLockMiddleware($factory, $metadata))->execute($operation, $handler))->toBe($operation);
+});
+
+it('rejects unusable stored properties before acquiring a resource lock or invoking the handler', function (object $command, string $message): void {
+    $factory = new LockFactory(new InMemoryStore());
+    $middleware = new ResourceLockMiddleware($factory, lockTestMetadata(new Lock('{value}')));
+    $handler = $this->createMock(OperationHandlerInterface::class);
+    $handler->expects($this->never())->method('handle');
+    expect(fn () => $middleware->execute(Operation::create($command), $handler))
+        ->toThrow(LockKeyResolutionException::class, $message);
+})->with([
+    'missing property' => [new stdClass(), 'does not exist'],
+    'static property' => [new class { public static string $value = 'static'; }, 'must not be static'],
+    'uninitialized property' => [new class { public string $value; }, 'is not initialized'],
+    'unsupported array' => [new class { public array $value = []; }, 'not convertible to string'],
+    'empty resolved key' => [new class { public string $value = ''; }, 'resolved to empty string'],
+]);
