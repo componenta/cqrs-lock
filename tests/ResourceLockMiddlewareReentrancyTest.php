@@ -207,7 +207,7 @@ it('retains independent resource ownership through three nested dispatches in th
         return $acquired;
     };
     $failure = new DomainException('nested failure');
-    $run = static function () use ($middleware, $first, $second, $terminal, $probe, $failure): void {
+    $run = static function () use ($middleware, $factory, $first, $second, $terminal, $probe, $failure): void {
         $inner = reentrantLockHandler(static function (OperationInterface $operation) use ($middleware, $first, $second, $terminal, $probe, $failure): OperationInterface {
             expect($probe(1))->toBeFalse()->and($probe(2))->toBeFalse();
             try {
@@ -231,6 +231,19 @@ it('retains independent resource ownership through three nested dispatches in th
         expect($middleware->execute($first, $outer))->toBe($first)
             ->and($probe(1))->toBeTrue()
             ->and($probe(2))->toBeTrue();
+
+        // In the same fiber/main context the next dispatch must really acquire
+        // its lock, rather than using a leftover depth counter.
+        foreach ([$first, $second] as $operation) {
+            $contender = $factory->createLock('resource:' . $operation->command->id);
+            expect($contender->acquire(false))->toBeTrue();
+            try {
+                expect(fn () => $middleware->execute($operation, $terminal))
+                    ->toThrow(LockAcquisitionException::class);
+            } finally {
+                $contender->release();
+            }
+        }
     };
     if ($inFiber) {
         $fiber = new Fiber($run);
