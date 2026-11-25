@@ -100,3 +100,79 @@ it('keeps lock ownership isolated between fibers', function (): void {
 
     expect($fiber->isTerminated())->toBeTrue();
 });
+
+it('holds the real lock throughout nested execution and releases it on success or failure', function (bool $fail): void {
+    $factory = new LockFactory(new InMemoryStore());
+    $middleware = new ResourceLockMiddleware(
+        $factory,
+        reentrantLockTestMetadata(new Lock('account:{id}', blocking: false)),
+    );
+    $command = new readonly class {
+        public int $id;
+        public function __construct() { $this->id = 42; }
+    };
+    $operation = Operation::create($command);
+    $probe = static function () use ($factory): bool {
+        $lock = $factory->createLock('account:42');
+        $acquired = $lock->acquire(false);
+        if ($acquired) {
+            $lock->release();
+        }
+
+        return $acquired;
+    };
+    $failure = new DomainException('nested failure');
+    $inner = new readonly class ($probe, $failure, $fail) implements OperationHandlerInterface {
+        public function __construct(
+            private Closure $probe,
+            private Throwable $failure,
+            private bool $fail,
+        ) {}
+        public function handle(OperationInterface $operation): OperationInterface
+        {
+            expect(($this->probe)())->toBeFalse();
+            if ($this->fail) {
+                throw $this->failure;
+            }
+            return $operation;
+        }
+    };
+    $outer = new readonly class ($middleware, $inner, $probe) implements OperationHandlerInterface {
+        public function __construct(
+            private ResourceLockMiddleware $middleware,
+            private OperationHandlerInterface $inner,
+            private Closure $probe,
+        ) {}
+        public function handle(OperationInterface $operation): OperationInterface
+        {
+            expect(($this->probe)())->toBeFalse();
+            try {
+                return $this->middleware->execute($operation, $this->inner);
+            } finally {
+                expect(($this->probe)())->toBeFalse();
+            }
+        }
+    };
+
+    if ($fail) {
+        try {
+            $middleware->execute($operation, $outer);
+            test()->fail('Expected nested failure.');
+        } catch (DomainException $caught) {
+            expect($caught)->toBe($failure);
+        }
+    } else {
+        expect($middleware->execute($operation, $outer))->toBe($operation);
+    }
+
+    expect($probe())->toBeTrue();
+    // A later call must acquire the lock, not inherit a stale reentrancy marker.
+    $contender = $factory->createLock('account:42');
+    expect($contender->acquire(false))->toBeTrue();
+    try {
+        expect(fn () => $middleware->execute($operation, $inner))
+            ->toThrow(LockAcquisitionException::class);
+    } finally {
+        $contender->release();
+    }
+})->with([false, true]);
