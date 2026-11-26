@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Componenta\CQRS\Command\Middleware;
 
+use Closure;
 use Componenta\CQRS\Command\Exception\LockAcquisitionException;
 use Componenta\CQRS\Command\Exception\LockKeyResolutionException;
 use Componenta\CQRS\Command\Exception\LockReleaseException;
@@ -37,8 +38,9 @@ final readonly class ResourceLockMiddleware implements MiddlewareInterface
             return $handler->handle($operation);
         }
 
-        $reflection = new ReflectionObject($command);
-        $key = $this->resolveKey($lockAttr->key, $command, $reflection);
+        $key = $lockAttr->key instanceof Closure
+            ? $this->resolveCallbackKey($lockAttr->key, $command)
+            : $this->resolveKey($lockAttr->key, $command, new ReflectionObject($command));
 
         if ($this->executionState->contains($key)) {
             $this->executionState->enter($key);
@@ -73,6 +75,31 @@ final readonly class ResourceLockMiddleware implements MiddlewareInterface
                 throw new LockReleaseException($exception, $releaseException);
             }
         }
+    }
+
+    /** @param Closure(object): string $resolver */
+    private function resolveCallbackKey(Closure $resolver, object $command): string
+    {
+        $commandClass = $command::class;
+
+        try {
+            // This local slot may be reassigned by reference; the operation is unchanged.
+            /** @var mixed $key */
+            $key = $resolver($command);
+        } catch (Throwable $failure) {
+            throw new LockKeyResolutionException(
+                sprintf('Lock key callback for %s failed; expected a non-blank string.', $commandClass),
+                previous: $failure,
+            );
+        }
+
+        if (!is_string($key) || trim($key) === '') {
+            throw new LockKeyResolutionException(
+                sprintf('Lock key callback for %s must return a non-blank string.', $commandClass),
+            );
+        }
+
+        return $key;
     }
 
     private function resolveKey(string $template, object $command, ReflectionObject $reflection): string

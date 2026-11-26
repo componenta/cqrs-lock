@@ -1,26 +1,26 @@
 # Callable lock-key resolvers
 
-**Readiness:** `blocked` — reconcile the unavailable linked design discussion before implementation; any mandatory CQRS5/DI6 migration requires its own settled dependency transition.
+**Readiness:** `implemented` — verified against the latest compatible library graph; see [integration verification](../development/integration.md).
 
 ## Objective
 
 Allow a command's `#[Lock]` declaration to compute an opaque resource key with a PHP closure. The middleware evaluates the key for the command being dispatched, then applies the same acquisition, reentrancy, and release protocol used for string-template keys.
 
-This is a specification-only draft. The callback contract below is a proposed design, not a claim that the linked conversation already required its exact signature or failure policy. No production code, tests, dependency declarations, or generated artifacts are changed by this document.
+This specification defines the public callback contract for the v4 add-on line. The supported dependency graph and executed verification evidence are recorded in the linked integration document.
 
 ## Evidence and scope
 
-The inspected package baseline is `componenta/cqrs-lock` `main` at `dbdfae8f364de5f4f52afa34ade2e5142be1bb9e`. Its `v2` branch is an ancestor of this baseline; it is not a newer implementation target. No `AGENTS.md` or existing specification convention was present in the inspected repository tree.
+The inspected package baseline is `componenta/cqrs-lock` `main` at `dbdfae8f364de5f4f52afa34ade2e5142be1bb9e`. Its `v2` branch is an ancestor of this baseline; it is not a newer implementation target.
 
-The baseline requires PHP `>=8.4`, `componenta/cqrs:^4.0.0`, `componenta/config:^3.0.0`, and `symfony/lock:^7.4 || ^8.0`. Released CQRS `v4.0.0` is commit `3e49a7dd8d0497d980cb93bb2a884d924710bcc9`. Separately inspected CQRS `main` at `b2306d6503a6ae1d010c160b24216dc830a7c31a` is the v5 line, requires PHP `^8.5.13` and DI `^6.0`, and is not admitted by the lock package's current Composer constraint. These are distinct compatibility targets.
+The inspected baseline required PHP `>=8.4`, `componenta/cqrs:^4.0.0`, `componenta/config:^3.0.0`, and `symfony/lock:^7.4 || ^8.0`. Released CQRS `v4.0.0` is commit `3e49a7dd8d0497d980cb93bb2a884d924710bcc9`. Separately inspected CQRS `main` at `b2306d6503a6ae1d010c160b24216dc830a7c31a` is the v5 line, requires PHP `^8.5.13` and DI `^6.0`, and was not admitted by the previous Composer constraint. The implementation migrates to this newer line with the dependency compatibility changes below.
 
-The required linked design discussion was unavailable during preparation. Its contents have not been incorporated into this draft. Reconcile its requirements before declaring this specification implementation-ready.
+Target dependencies are PHP `^8.5.13`, `componenta/cqrs:^5.0`, `componenta/config:^4.0`, and `symfony/lock:^8.1`. CQRS5 uses DI6 and Reflection3. The corresponding DI/CQRS compatibility work must be present in the verified dependency graph; older code must not be relabeled as a newer major version to satisfy Composer. These constraints supersede the previous CQRS4/PHP8.4/Symfony7.4 package baseline.
 
 In scope: the `Lock` attribute's key input, per-invocation key resolution, error projection, and public-contract verification for both callback and string-template keys.
 
 Out of scope: changing distributed-lock stores, introducing lock refresh or deadlines, changing middleware order, serializing closures, adding a callback registry, resolving callback parameters through a container, or changing the CQRS operation lifecycle.
 
-## Current architecture
+## Inspected baseline architecture
 
 - `src/Lock/Attribute/Lock.php` is a final readonly class-target attribute. It accepts a string key, trims its outer whitespace, rejects an empty result, and validates a positive finite TTL. Defaults are `ttl: 300.0` seconds and `blocking: true`.
 - `src/Command/Middleware/ResourceLockMiddleware.php` asks `CommandMetadataProviderInterface` for `Lock`, resolves placeholders against the current command, acquires a Symfony lock, invokes the next handler, and releases the lock in a `finally` path.
@@ -41,22 +41,23 @@ Out of scope: changing distributed-lock stores, introducing lock refresh or dead
 - **P3:** Existing Fiber isolation, nested same-key behavior, and release-failure reporting remain valid for keys produced by callbacks.
 - **P4:** Application configuration continues to own lock/retry/transaction/policy order. A callback does not add a hidden lock layer or retry loop.
 
-## Proposed desired-state contract
+## Desired-state contract
 
-The following decisions must be reconciled with the linked conversation before becoming the implementation target.
+The following contracts govern the implementation.
 
 ### Attribute boundary
 
-Keep the existing attribute and parameter names. Widen only the key input and exposed key value:
+Keep the existing attribute and parameter names. Widen only the key input and exposed key value. Declare `Lock` with PHPDoc `@template TCommand of object` so a callback can accept the concrete command type without falsely promising to accept every object:
 
 ```php
-/** @param string|(Closure(object): string) $key */
+/** @param string|(Closure(TCommand): string) $key */
 public function __construct(
     string|Closure $key,
     public float $ttl = 300.0,
     public bool $blocking = true,
 );
 
+/** @var string|(Closure(TCommand): string) */
 public string|Closure $key;
 ```
 
@@ -76,6 +77,8 @@ The application owns collision avoidance and resource scope, including tenant/ac
 
 A callback should compute a stable key from explicit command data. PHP's `static` syntax does not prove purity: callback code can still use static variables, globals, I/O, or mutable objects. The middleware does not sandbox application code or promise that arbitrary user callbacks are side-effect-free.
 
+Reassigning the callback's local command argument by reference does not replace the command held by the operation. Error projection uses the original command class even if the callback reassigns its argument and then throws. Shared object mutations remain ordinary application effects.
+
 ### Invocation and failure semantics
 
 For a callback declaration, resolve the key exactly once on each call to `execute()` after metadata materialization succeeds. Resolution precedes both the reentrancy lookup and creation/acquisition of a Symfony lock. A reentrant nested dispatch still resolves its own command's key once, then uses the existing reentrancy protocol.
@@ -86,7 +89,7 @@ No key-resolution failure creates/acquires a lock, invokes the downstream handle
 
 After a valid key is obtained, enter the existing acquisition and release flow. Do not wrap an acquisition or release failure as `LockKeyResolutionException`.
 
-### Example of the proposed API
+### Public API example
 
 ```php
 use Componenta\CQRS\Lock\Attribute\Lock;
@@ -108,7 +111,7 @@ final readonly class RebuildProduct
 
 An inline PHP 8.5 attribute callback uses `static function (RebuildProduct $command): string { ... }` without a `use` capture. Arrow functions, including `static fn`, are not supported in PHP 8.5 constant expressions. First-class function/static-method callables preserve PHP's native scope; the middleware must not reconstruct private methods by name.
 
-Although the syntax is available from PHP 8.5.0, the proposed native first-class-callable attribute scope contract is supported and must be tested on PHP 8.5.13 or later. PHP 8.5.13 fixes trait constant-expression callables resolving against the first consuming class and bypassing visibility checks.
+Although the syntax is available from PHP 8.5.0, the native first-class-callable attribute scope contract is supported and must be tested on PHP 8.5.13 or later. PHP 8.5.13 fixes trait constant-expression callables resolving against the first consuming class and bypassing visibility checks.
 
 ## Metadata, generated artifacts, and lifetime
 
@@ -133,7 +136,7 @@ The existing TTL remains a duration in seconds passed to Symfony. It does not be
 | Third-party metadata providers / metadata-inspecting consumers | May supply or observe the documented union; must not assume every key is a string. |
 | `cqrs-app` generated registration maps | No format change or migration. |
 
-The implementation will update `tests/LockAttributeTest.php`, `tests/ResourceLockMiddlewarePropertyTest.php`, `tests/ResourceLockMiddlewareReentrancyTest.php`, native attribute fixtures in the existing test tree, and `README.md`. Test files are not changed during specification work.
+The implementation adds `tests/ResourceLockCallbackTest.php` and a typed consumer fixture, extends attribute/provider tests, retains the existing property and reentrancy tests, and documents the contract in English and Russian. `integration/lock-retry.php` verifies both lock/retry topologies without introducing reciprocal development dependencies.
 
 ## Verification strategy
 
@@ -153,14 +156,14 @@ Use Pest as declared by this package. Test `ResourceLockMiddleware::execute()` a
 | P4 | Composing lock outside retry holds the resolved lock across attempts; composing it inside retry resolves/acquires/releases on each middleware entry. |
 | Scope / metadata | On PHP 8.5.13+, two command classes using the same trait and private static first-class callbacks retain their own class scope and visibility through first and repeated metadata resolution; callback body state is neither precomputed nor deliberately rebound. |
 
-For TDD, establish each new public outcome as failing on the baseline, implement the smallest coherent behavior, and rerun the related existing tests. Verify the callback and template success controls alongside rejection cases. Use the verified package commands `composer test` and `composer analyse` once dependencies for the chosen target line are installed. Any supported PHP-version-specific fixtures must be parsed only on a compatible runtime. Tests and syntax checks have not been executed as part of this draft.
+For TDD, establish each new public outcome as failing on the baseline, implement the smallest coherent behavior, and rerun the related existing tests. Verify the callback and template success controls alongside rejection cases. Use the verified package commands `composer test` and `composer analyse` once dependencies for the chosen target line are installed. Any supported PHP-version-specific fixtures must be parsed only on a compatible runtime. Execution evidence belongs to the implementation verification record.
 
-## Blocking decisions and bounded evidence work
+## Implementation plan
 
-1. **Linked-conversation requirements.** Read the supplied conversation and extract only decisions affecting callable argument shape, dependency versions, existing syntax, and desired scope. Reconcile them with this document and remove or revise the proposed decisions. Stop when there is an explicit conflict resolution for every material difference. Do not infer inaccessible requirements from the conversation URL.
-2. **Dependency reconciliation.** The proposed feature targets the current package line and retains its CQRS4-compatible constraints. Its class definitions can remain compatible with PHP 8.4, but the supported native callable attribute scope contract and its acceptance fixtures require PHP 8.5.13+. Retaining package-wide PHP 8.4 for existing/programmatic usage versus raising the package minimum remains a dependency-reconciliation decision; syntax availability from PHP 8.5.0 does not settle that choice. If the unavailable discussion mandates the DI6/CQRS5 stack or a higher library-wide PHP minimum, that is a separate migration prerequisite: explicitly settle the Composer transition and integration pairing before implementation. The current add-on constraints cannot install CQRS5. Do not describe DI6 integration as delivered merely because both metadata mechanisms can carry a closure.
-
-No production slices are executable while these blockers remain. After they are settled, derive dependency-ordered behavior slices from the contract and acceptance mapping: key callback resolution, failure/isolation behavior, then metadata/composition parity. The final implementation must be compared against this desired state for missing, partial, contradictory, or unrequested behavior.
+1. **Dependency and public-contract baseline.** Install the actual compatible CQRS5/DI6/Config4/Reflection3 graph on PHP 8.5.13+. Run the existing public tests to distinguish migration failures from the new feature. Update the declared constraints and CI integration source selection without changing unrelated dependency APIs.
+2. **Callback keys.** First add failing public middleware/native-attribute tests for per-command keys, literal result validation, callback failures, and identity preservation. Implement the attribute union and one resolution path before the existing lock protocol. This slice is complete when valid callbacks acquire exactly the returned resource and invalid callbacks acquire nothing.
+3. **Ownership and composition.** Verify callback/template same-key reentrancy, cross-Fiber contention, cleanup after failure, and native class scope through repeated metadata lookup. Preserve all existing string-template behavior. No second ownership mechanism is introduced.
+4. **Convergence.** Run the package tests, static analysis, and real Config4/DI6 composition checks. Update English/Russian documentation and compare the result with all requirements and acceptance cases above. Resolve missing, partial, contradictory, or unrequested behavior before completion.
 
 ## Sources
 

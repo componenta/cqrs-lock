@@ -12,18 +12,32 @@ permissions:
 jobs:
   verify:
     runs-on: ubuntu-latest
+    env:
+      COMPOSER: .composer-integration.json
     strategy:
       fail-fast: false
       matrix:
-        php: ['8.4', '8.5']
+        php: ['8.5.13', '8.5']
     steps:
       - uses: actions/checkout@v7
-      - name: Checkout released CQRS v4 source
+      - name: Checkout current CQRS 5 compatibility source
         uses: actions/checkout@v7
         with:
           repository: componenta/cqrs
-          ref: v4.0.0
+          ref: 16cef01402d08e0fb6498b07169c7a3e71197338
           path: .ci/cqrs
+      - name: Checkout current DI 6 compatibility source
+        uses: actions/checkout@v7
+        with:
+          repository: componenta/di
+          ref: ded9a6dc44db2775c4753e73d9581d70caac6043
+          path: .ci/di
+      - name: Checkout current Identity compatibility source
+        uses: actions/checkout@v7
+        with:
+          repository: componenta/identity
+          ref: 3feb94e0d64956ecdf7b22abed4a8bd9f597abeb
+          path: .ci/identity
       - uses: shivammathur/setup-php@v2
         with:
           php-version: ${{ matrix.php }}
@@ -31,39 +45,72 @@ jobs:
           tools: composer:v2
       - name: Configure Composer authentication
         run: composer config --global github-oauth.github.com "${{ github.token }}"
-      - run: composer validate --strict
-      - name: Use released CQRS v4 source
-        run: >-
-          composer config --json repositories.componenta-cqrs
-          '{"type":"path","url":".ci/cqrs","options":{"versions":{"componenta/cqrs":"4.0.0"}}}'
-      - name: Install dependencies
-        run: composer update --with-all-dependencies --no-interaction --prefer-dist --no-progress
+      - run: COMPOSER=composer.json composer validate --strict
+      - name: Prepare current dependency graph
+        shell: bash
+        run: |
+          for dependency in cqrs di identity; do
+            git -C ".ci/$dependency" switch -C fix/callback-dependency-baseline-2026-11-26
+          done
+          cp composer.json "$COMPOSER"
+          composer config --json repositories.componenta-cqrs '{"type":"path","url":".ci/cqrs"}'
+          composer config --json repositories.componenta-di '{"type":"path","url":".ci/di"}'
+          composer config --json repositories.componenta-identity '{"type":"path","url":".ci/identity"}'
+          composer require --no-update \
+            componenta/cqrs:dev-fix/callback-dependency-baseline-2026-11-26 \
+            componenta/di:dev-fix/callback-dependency-baseline-2026-11-26 \
+            componenta/identity:dev-fix/callback-dependency-baseline-2026-11-26
+      - run: composer update --with-all-dependencies --no-interaction --prefer-dist --no-progress
       - run: composer test
       - run: composer analyse
 
   verify-minimum-lock:
     runs-on: ubuntu-latest
+    env:
+      COMPOSER: .composer-integration.json
     steps:
       - uses: actions/checkout@v7
-      - name: Checkout released CQRS v4 source
+      - name: Checkout current CQRS 5 compatibility source
         uses: actions/checkout@v7
         with:
           repository: componenta/cqrs
-          ref: v4.0.0
+          ref: 16cef01402d08e0fb6498b07169c7a3e71197338
           path: .ci/cqrs
+      - name: Checkout current DI 6 compatibility source
+        uses: actions/checkout@v7
+        with:
+          repository: componenta/di
+          ref: ded9a6dc44db2775c4753e73d9581d70caac6043
+          path: .ci/di
+      - name: Checkout current Identity compatibility source
+        uses: actions/checkout@v7
+        with:
+          repository: componenta/identity
+          ref: 3feb94e0d64956ecdf7b22abed4a8bd9f597abeb
+          path: .ci/identity
       - uses: shivammathur/setup-php@v2
         with:
-          php-version: '8.4'
+          php-version: '8.5.13'
           coverage: none
           tools: composer:v2
       - name: Configure Composer authentication
         run: composer config --global github-oauth.github.com "${{ github.token }}"
-      - run: composer validate --strict
-      - name: Select released CQRS and minimum lock version
+      - run: COMPOSER=composer.json composer validate --strict
+      - name: Prepare current dependency graph
         shell: bash
         run: |
-          composer config --json repositories.componenta-cqrs '{"type":"path","url":".ci/cqrs","options":{"versions":{"componenta/cqrs":"4.0.0"}}}'
-          composer require --no-update symfony/lock:7.4.0
+          for dependency in cqrs di identity; do
+            git -C ".ci/$dependency" switch -C fix/callback-dependency-baseline-2026-11-26
+          done
+          cp composer.json "$COMPOSER"
+          composer config --json repositories.componenta-cqrs '{"type":"path","url":".ci/cqrs"}'
+          composer config --json repositories.componenta-di '{"type":"path","url":".ci/di"}'
+          composer config --json repositories.componenta-identity '{"type":"path","url":".ci/identity"}'
+          composer require --no-update \
+            componenta/cqrs:dev-fix/callback-dependency-baseline-2026-11-26 \
+            componenta/di:dev-fix/callback-dependency-baseline-2026-11-26 \
+            componenta/identity:dev-fix/callback-dependency-baseline-2026-11-26
+      - run: composer require --no-update symfony/lock:8.1.0
       - run: composer update --with-all-dependencies --no-interaction --prefer-dist --no-progress
       - run: composer test
       - run: composer analyse

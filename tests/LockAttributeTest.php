@@ -20,4 +20,6 @@ it('rejects empty and whitespace-only lock templates', function (string $key): v
 
 it('rejects non-positive or non-finite lock lifetimes', function (float $ttl): void {
     expect(fn () => new Lock('account', ttl: $ttl))->toThrow(InvalidArgumentException::class, 'positive finite');
+    expect(fn () => new Lock(static fn (): string => 'account', ttl: $ttl))
+        ->toThrow(InvalidArgumentException::class, 'positive finite');
 })->with([0.0, -1.0, INF, -INF, NAN]);

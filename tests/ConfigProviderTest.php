@@ -21,7 +21,17 @@ final class LockProviderCommand
 {
 }
 
-it('uses discovered metadata to hold and release the configured lock', function (): void {
+#[Lock(static function (LockProviderCallbackCommand $command): string {
+    ++$command->resolutions;
+
+    return 'provider.contract';
+}, blocking: false)]
+final class LockProviderCallbackCommand
+{
+    public int $resolutions = 0;
+}
+
+it('uses discovered metadata to hold and release the configured lock', function (object $command): void {
     $locks = new LockFactory(new InMemoryStore());
     $composition = (new ConfigFactory())->create(
         new Environment([]),
@@ -40,10 +50,13 @@ it('uses discovered metadata to hold and release the configured lock', function 
             return $operation->withResult(new OperationResult($this->probe->acquire(false)));
         }
     };
-    $result = $container->get(ResourceLockMiddleware::class)->execute(Operation::create(new LockProviderCommand()), $handler);
+    $result = $container->get(ResourceLockMiddleware::class)->execute(Operation::create($command), $handler);
     expect($result->result?->value)->toBeFalse()->and($probe->acquire(false))->toBeTrue();
     $probe->release();
-});
+    if ($command instanceof LockProviderCallbackCommand) {
+        expect($command->resolutions)->toBe(1);
+    }
+})->with(['template' => [new LockProviderCommand()], 'callback' => [new LockProviderCallbackCommand()]]);
 
 
 it('registers its factory and rejects invalid lock and metadata services', function (): void {

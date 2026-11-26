@@ -4,11 +4,11 @@
     "type": "library",
     "license": "MIT",
     "require": {
-        "php": ">=8.4",
-        "componenta/config": "^3.0.0",
-        "componenta/cqrs": "^4.0.0",
+        "php": "^8.5.13",
+        "componenta/config": "^4.0",
+        "componenta/cqrs": "^5.0",
         "psr/container": "^2.0",
-        "symfony/lock": "^7.4 || ^8.0"
+        "symfony/lock": "^8.1"
     },
     "require-dev": {
         "pestphp/pest": "^4.0",
@@ -33,7 +33,8 @@
     "minimum-stability": "stable",
     "extra": {
         "branch-alias": {
-            "dev-main": "3.0.x-dev"
+            "dev-main": "4.0.x-dev",
+            "dev-spec/attribute-callbacks-2026-11-26": "4.0.x-dev"
         },
         "componenta": {
             "config-providers": [
@@ -44,6 +45,6 @@
     "prefer-stable": true,
     "scripts": {
         "test": "@php vendor/bin/pest",
-        "analyse": "@php vendor/bin/phpstan analyse src --level=max"
+        "analyse": "@php vendor/bin/phpstan analyse src tests/Fixture/TypedLockConsumer.php --level=max"
     }
 }
