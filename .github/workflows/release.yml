@@ -25,14 +25,14 @@ jobs:
         uses: actions/checkout@v7
         with:
           repository: componenta/cqrs
-          ref: 16cef01402d08e0fb6498b07169c7a3e71197338
+          ref: 9d3da0fcb8a0d59d9639d2c5da2adb942dc7953f
           path: .ci/cqrs
       - name: Checkout current DI 6 compatibility source
         if: ${{ env.COMPOSER == '.composer-integration.json' }}
         uses: actions/checkout@v7
         with:
           repository: componenta/di
-          ref: ded9a6dc44db2775c4753e73d9581d70caac6043
+          ref: e4f19ab9a9f6bd18da85fc52c8d478433a32baec
           path: .ci/di
       - name: Checkout current Identity compatibility source
         if: ${{ env.COMPOSER == '.composer-integration.json' }}
@@ -79,14 +79,14 @@ jobs:
         uses: actions/checkout@v7
         with:
           repository: componenta/cqrs
-          ref: 16cef01402d08e0fb6498b07169c7a3e71197338
+          ref: 9d3da0fcb8a0d59d9639d2c5da2adb942dc7953f
           path: .ci/cqrs
       - name: Checkout current DI 6 compatibility source
         if: ${{ env.COMPOSER == '.composer-integration.json' }}
         uses: actions/checkout@v7
         with:
           repository: componenta/di
-          ref: ded9a6dc44db2775c4753e73d9581d70caac6043
+          ref: e4f19ab9a9f6bd18da85fc52c8d478433a32baec
           path: .ci/di
       - name: Checkout current Identity compatibility source
         if: ${{ env.COMPOSER == '.composer-integration.json' }}

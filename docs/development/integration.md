@@ -14,8 +14,8 @@ Use PHP 8.5.13 or later and Composer 2. The following commands run from a clean 
 git clone --branch fix/callback-dependency-baseline-2026-11-26 --single-branch https://github.com/componenta/cqrs.git .ci/cqrs
 git clone --branch fix/callback-dependency-baseline-2026-11-26 --single-branch https://github.com/componenta/di.git .ci/di
 git clone --branch fix/callback-dependency-baseline-2026-11-26 --single-branch https://github.com/componenta/identity.git .ci/identity
-git -C .ci/cqrs switch -C fix/callback-dependency-baseline-2026-11-26 16cef01402d08e0fb6498b07169c7a3e71197338
-git -C .ci/di switch -C fix/callback-dependency-baseline-2026-11-26 ded9a6dc44db2775c4753e73d9581d70caac6043
+git -C .ci/cqrs switch -C fix/callback-dependency-baseline-2026-11-26 9d3da0fcb8a0d59d9639d2c5da2adb942dc7953f
+git -C .ci/di switch -C fix/callback-dependency-baseline-2026-11-26 e4f19ab9a9f6bd18da85fc52c8d478433a32baec
 git -C .ci/identity switch -C fix/callback-dependency-baseline-2026-11-26 3feb94e0d64956ecdf7b22abed4a8bd9f597abeb
 cp composer.json .composer-integration.json
 export COMPOSER=.composer-integration.json
@@ -41,8 +41,8 @@ Verified on 2026-11-26 with PHP 8.5.13, Composer 2.11.2, Pest 4.7.8, PHPUnit 12.
 
 | Dependency | Verified revision |
 |---|---|
-| CQRS5 compatibility branch | `16cef01402d08e0fb6498b07169c7a3e71197338` |
-| DI6 compatibility branch | `ded9a6dc44db2775c4753e73d9581d70caac6043` |
+| CQRS5 compatibility branch | `9d3da0fcb8a0d59d9639d2c5da2adb942dc7953f` |
+| DI6 compatibility branch | `e4f19ab9a9f6bd18da85fc52c8d478433a32baec` |
 | Identity1.1 compatibility branch | `3feb94e0d64956ecdf7b22abed4a8bd9f597abeb` |
 | Config | `v4.0.0` (`4685e71d86500a7b51f4a773bb3022dd787fba7f`) |
 | Reflection | `v3.0.0` |
@@ -55,6 +55,8 @@ Verified on 2026-11-26 with PHP 8.5.13, Composer 2.11.2, Pest 4.7.8, PHPUnit 12.
 - Final current graph: **42 tests / 226 assertions passed** with Symfony Lock **8.1.12**; maximum-level PHPStan passed, Composer strict validation passed, and all production platform requirements passed.
 - The agreed minimum Symfony Lock **8.1.0** gate also passed **42 tests / 226 assertions** and maximum-level PHPStan on PHP 8.5.13. The working dependency graph was then restored to 8.1.12.
 - The CI workflow YAML and declared PHP matrix were parsed, and the actual dependency-install recipe was executed locally. Remote Actions execution is separate from these local results.
+
+The complete package suite, maximum-level analysis, and lock/retry composition check were rerun after the DI6 assembly-readiness update at the revision above. The release, ordinary-push, and pull-request workflow paths were checked separately. Stable production resolution currently rejects the unavailable stable CQRS5 requirement; the release path preserves that failure instead of substituting development sources.
 
 The targeted Symfony constraint is `^8.1`. CI checks the latest admitted release and the minimum 8.1.0 API baseline. Symfony 7.4 is part of the old package baseline, not the current compatibility target.
 
