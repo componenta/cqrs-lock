@@ -13,7 +13,7 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     env:
-      COMPOSER: .composer-integration.json
+      COMPOSER: ${{ github.event_name == 'push' && startsWith(github.event.head_commit.message, 'Release v') && 'composer.json' || '.composer-integration.json' }}
     strategy:
       fail-fast: false
       matrix:
@@ -21,18 +21,21 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Checkout current CQRS 5 compatibility source
+        if: ${{ env.COMPOSER == '.composer-integration.json' }}
         uses: actions/checkout@v7
         with:
           repository: componenta/cqrs
           ref: 16cef01402d08e0fb6498b07169c7a3e71197338
           path: .ci/cqrs
       - name: Checkout current DI 6 compatibility source
+        if: ${{ env.COMPOSER == '.composer-integration.json' }}
         uses: actions/checkout@v7
         with:
           repository: componenta/di
           ref: ded9a6dc44db2775c4753e73d9581d70caac6043
           path: .ci/di
       - name: Checkout current Identity compatibility source
+        if: ${{ env.COMPOSER == '.composer-integration.json' }}
         uses: actions/checkout@v7
         with:
           repository: componenta/identity
@@ -47,6 +50,7 @@ jobs:
         run: composer config --global github-oauth.github.com "${{ github.token }}"
       - run: COMPOSER=composer.json composer validate --strict
       - name: Prepare current dependency graph
+        if: ${{ env.COMPOSER == '.composer-integration.json' }}
         shell: bash
         run: |
           for dependency in cqrs di identity; do
@@ -67,22 +71,25 @@ jobs:
   verify-minimum-lock:
     runs-on: ubuntu-latest
     env:
-      COMPOSER: .composer-integration.json
+      COMPOSER: ${{ github.event_name == 'push' && startsWith(github.event.head_commit.message, 'Release v') && 'composer.json' || '.composer-integration.json' }}
     steps:
       - uses: actions/checkout@v7
       - name: Checkout current CQRS 5 compatibility source
+        if: ${{ env.COMPOSER == '.composer-integration.json' }}
         uses: actions/checkout@v7
         with:
           repository: componenta/cqrs
           ref: 16cef01402d08e0fb6498b07169c7a3e71197338
           path: .ci/cqrs
       - name: Checkout current DI 6 compatibility source
+        if: ${{ env.COMPOSER == '.composer-integration.json' }}
         uses: actions/checkout@v7
         with:
           repository: componenta/di
           ref: ded9a6dc44db2775c4753e73d9581d70caac6043
           path: .ci/di
       - name: Checkout current Identity compatibility source
+        if: ${{ env.COMPOSER == '.composer-integration.json' }}
         uses: actions/checkout@v7
         with:
           repository: componenta/identity
@@ -97,6 +104,7 @@ jobs:
         run: composer config --global github-oauth.github.com "${{ github.token }}"
       - run: COMPOSER=composer.json composer validate --strict
       - name: Prepare current dependency graph
+        if: ${{ env.COMPOSER == '.composer-integration.json' }}
         shell: bash
         run: |
           for dependency in cqrs di identity; do

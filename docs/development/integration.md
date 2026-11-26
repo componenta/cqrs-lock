@@ -31,7 +31,9 @@ composer test
 composer analyse
 ```
 
-CI follows the same recipe. The PHP matrix covers 8.5.13 and the current 8.5 patch. A published stable CQRS5/DI6/compatible Identity set can later replace the explicit development selection without changing the package's runtime API.
+Pull requests and ordinary main pushes follow this development recipe. The PHP matrix covers 8.5.13 and the current 8.5 patch.
+
+A main push whose commit message starts with `Release v` verifies the tracked `composer.json` using normal stable dependency resolution. The release path skips all development-source checkouts and manifest generation. Both the main verification and the minimum Symfony Lock gate use that stable graph before the publish job can run. The minimum gate narrows only Symfony Lock to 8.1.0, which is already admitted by the production constraint. Until stable releases satisfying the declared CQRS5/DI6/Config4 graph exist, release verification must fail; successful development-branch integration does not make a stable release publishable.
 
 ## Verification record
 
